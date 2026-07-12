@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Needed to fetch the remote screensaver manifest + images (https). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- TV devices have no touchscreen; declare it optional so we install on TV. -->
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
+    <!-- Leanback marks this as a real TV app. -->
+    <uses-feature
+        android:name="android.software.leanback"
+        android:required="true" />
+
+    <!--
+      Android 11+ package visibility. A launcher must be able to see other apps'
+      launch activities. We declare the specific intents we resolve instead of the
+      broad QUERY_ALL_PACKAGES permission.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
+    <application
+        android:allowBackup="true"
+        android:banner="@drawable/app_banner"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.GoogleTvLauncher">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape"
+            android:stateNotNeeded="true"
+            android:theme="@style/Theme.GoogleTvLauncher">
+            <!-- HOME filter: makes the app eligible as the TV home screen. Separated and
+                 given a high priority so generic category.HOME resolution can prefer us
+                 over the stock launcher. (Google TV pins its own launcher hard, so this
+                 is a best-effort nudge; the ROLE_HOME grant / in-app request is the real
+                 mechanism.) -->
+            <intent-filter android:priority="100">
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <!-- Also list us in the normal app launchers so we can always be opened. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Home-button redirect. On Google TV boxes where the Home button ignores the
+          default-home role (this TCL), this accessibility service watches for the stock
+          launcher appearing and launches us over it. User-enabled under Settings >
+          Accessibility. Bound only by the system (BIND_ACCESSIBILITY_SERVICE).
+        -->
+        <service
+            android:name=".HomeRedirectService"
+            android:exported="true"
+            android:label="@string/home_redirect_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/home_redirect_service" />
+        </service>
+
+        <!-- Screensaver / "Daydream". Selectable under Settings > System > Screensaver. -->
+        <service
+            android:name=".screensaver.ScreensaverDreamService"
+            android:exported="true"
+            android:label="@string/screensaver_name"
+            android:permission="android.permission.BIND_DREAM_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.dreams.DreamService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.dream"
+                android:resource="@xml/screensaver_metadata" />
+        </service>
+
+    </application>
+
+</manifest>

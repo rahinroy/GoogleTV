@@ -1,0 +1,38 @@
+# ---- Build output ----
+.gradle/
+build/
+app/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+
+# ---- IDE / OS ----
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# ---- Local machine config (never commit) ----
+local.properties
+
+# ---- Signing keys (not distributed; build falls back to Gradle's debug key) ----
+signing/
+*.keystore
+*.jks
+
+# ---- Vendored platform-tools binaries (supply your own adb) ----
+platform-tools/
+
+# ---- Personal screensaver photos ----
+# The source photo folder and the bundled copies are personal and NOT distributed.
+# Drop your own JPEGs into app/src/main/assets/screensaver/ to bundle them.
+screensaver/
+app/src/main/assets/screensaver/*.jpg
+app/src/main/assets/screensaver/*.jpeg
+app/src/main/assets/screensaver/*.png
+app/src/main/assets/screensaver/*.webp
+
+# ---- Misc ----
+*.log

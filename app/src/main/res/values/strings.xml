@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TV Launcher</string>
+    <string name="screensaver_name">Photo Screensaver</string>
+    <string name="home_redirect_label">TV Launcher — Home button</string>
+    <string name="home_redirect_description">Opens this launcher whenever the stock home screen appears, so the Home button lands on it instead. Nothing is disabled; turn this off any time to restore the stock home.</string>
+</resources>

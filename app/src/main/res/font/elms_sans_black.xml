@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A static "Black" (weight 900) instance of the Elms Sans variable font. Baking the
+  `wght` axis into its own font resource gives it a distinct resource id, so Compose
+  doesn't collide it in the typeface cache with other weights of the same .ttf.
+-->
+<font-family xmlns:android="http://schemas.android.com/apk/res/android">
+    <font
+        android:font="@font/elms_sans"
+        android:fontStyle="normal"
+        android:fontWeight="900"
+        android:fontVariationSettings="'wght' 900" />
+</font-family>
