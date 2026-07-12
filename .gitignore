@@ -25,14 +25,13 @@ signing/
 # ---- Vendored platform-tools binaries (supply your own adb) ----
 platform-tools/
 
-# ---- Personal screensaver photos ----
-# The source photo folder and the bundled copies are personal and NOT distributed.
-# Drop your own JPEGs into app/src/main/assets/screensaver/ to bundle them.
-screensaver/
-app/src/main/assets/screensaver/*.jpg
-app/src/main/assets/screensaver/*.jpeg
-app/src/main/assets/screensaver/*.png
-app/src/main/assets/screensaver/*.webp
+# ---- Personal screensaver photos (never distributed) ----
+# Top-level source photo folder: fully ignored (anchored to repo root).
+/screensaver/
+# Bundled assets: ignore EVERY file in this folder (any type, so no photo can ever
+# slip in) but keep the folder present via its README placeholder.
+app/src/main/assets/screensaver/*
+!app/src/main/assets/screensaver/README.txt
 
 # ---- Misc ----
 *.log
