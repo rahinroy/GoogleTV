@@ -11,19 +11,10 @@ It's designed to be **sideloaded** onto your own device, not published to a stor
 
 ## What it looks like
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│ 5:12 PM                              Manawatu-Whanganui, NZ    │   ← clock (top-left)
-│                                              June 21, 2025     │   ← photo place/date
-│                                                                │      (top-right, from EXIF)
-│                  full-screen photo slideshow                   │
-│                     (your own wallpaper)                       │
-│                                                                │
-│      ┌──────┐  ┌────┐  ┌────┐  ┌──────┐  ┌────┐  ┌───┐        │
-│      │YouTube│ │Twitch│ │Spot.│ │Netflix│ │Disney│ │ ⚙ │  ...  │   ← floating dock
-│      └──────┘  └────┘  └────┘  └──────┘  └────┘  └───┘        │      (scrolls horizontally)
-└──────────────────────────────────────────────────────────────┘
-```
+![TV Launcher home screen](docs/home-screen.png)
+
+Full-screen photo wallpaper, the clock top-left, the photo's location and capture date
+(from EXIF) top-right, and the floating app dock along the bottom.
 
 **Features**
 
@@ -138,7 +129,7 @@ adb shell am start -n com.android.systemui/.Somnambulator
 
 ---
 
-## Making it the default launcher (the honest version)
+## Making it the default launcher
 
 Google TV deliberately pins its own launcher and **hides the "default home app"
 chooser**, so this is device-dependent and often not fully possible without trade-offs:
