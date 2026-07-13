@@ -190,6 +190,51 @@ Google TV pins its own launcher and hides the "default home app" chooser. Findin
 
 ---
 
+## Home-button reliability: LMK + the TCL autostart lockdown (deep-dive)
+
+Symptom: after ~a day the Home button stops opening this launcher; the accessibility
+toggle still reads ON but does nothing until toggled off/on; reopening cold-starts.
+This is **not a crash and not a memory leak in our code** — verified: `dumpsys dropbox
+--print` had zero `data_app_crash` for us, the crash buffer was clean. Two real causes:
+
+1. **Low-memory-killer reclaim.** This class of box is 2 GB RAM and already swaps into
+   zram. The launcher's `am_proc_died` events fire with no crash record — it's the LMK
+   evicting the backgrounded process while you use heavy apps. Originally the Compose UI
+   **and** the `HomeRedirectService` shared one process, so the redirect died with the UI.
+2. **TCL "TclAppBoot" autostart manager.** Logcat shows, on every rebind attempt:
+   `ActivityManager: [TclAppBoot]: forbid bind service …HomeRedirectService` /
+   `reason='callee_doesn't_have_OP_AUTO_START_permission', isAutoStart='true'`. TCL blocks
+   the *automatic* (re)binding of our accessibility service unless the app holds the
+   vendor appop `AUTO_START`. A **user-initiated** toggle via the on-screen Accessibility
+   UI is allowed (that's why the in-app button works but a programmatic/boot bind doesn't).
+   Crucially, **`AUTO_START` resets to `ignore` on every reboot** (confirmed across a
+   reboot), and the device is not rooted, so there's no persistent allowlist we can write.
+
+Fixes applied (see the manifest, `LauncherApp.kt`, `LauncherScreen.kt`):
+- **`HomeRedirectService` runs in its own `android:process=":home"`.** Decoupled from the
+  fat UI process, so LMK evicting the UI no longer kills the redirect. Validated: killed
+  the UI process, `:home` survived and still relaunched us when the stock launcher
+  appeared. This is the main fix — it kills the "resets after a day" (non-reboot) case.
+- **Smaller footprint** so the process is a poorer LMK target: `LauncherApp` supplies a
+  Coil `ImageLoader` with `allowRgb565(true)` (opaque wallpapers → 2 bytes/px) and a
+  15% memory cache; the slideshow only advances while `RESUMED` (`repeatOnLifecycle`) so
+  it stops decoding full-screen bitmaps in the background.
+- **Grant the vendor appop** so auto-rebind is permitted (holds until the next reboot):
+  `adb shell cmd appops set com.nihar.tvlauncher AUTO_START allow`.
+
+Binding the service programmatically for testing needs a *transition* (setting the same
+value is a no-op): `settings delete secure enabled_accessibility_services` then
+`settings put secure enabled_accessibility_services <pkg>/<pkg>.HomeRedirectService` and
+`settings put secure accessibility_enabled 1`. Confirm with
+`dumpsys accessibility | grep 'Bound services'` and `ps -A | grep :home`.
+
+**Reboot limitation (unavoidable on this box):** after a reboot `AUTO_START` is `ignore`
+again and the boot-time auto-bind is forbidden, so the Home button falls back to the
+stock launcher (graceful — no black screen, since we no longer disable the stock
+launcher). Re-enable with the in-app "Set as default launcher" button (user-initiated
+toggle, always allowed) or run `setup-home.ps1` / `setup-home.bat` from a PC. Full
+zero-touch boot survival isn't achievable for a sideloaded app under TclAppBoot.
+
 ## Gotchas
 
 - **Variable-font weight in Compose `res/font`.** Registering several `FontWeight`s that

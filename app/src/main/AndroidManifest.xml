@@ -30,6 +30,7 @@
     </queries>
 
     <application
+        android:name=".LauncherApp"
         android:allowBackup="true"
         android:banner="@drawable/app_banner"
         android:icon="@drawable/ic_launcher"
@@ -69,8 +70,17 @@
           launcher appearing and launches us over it. User-enabled under Settings >
           Accessibility. Bound only by the system (BIND_ACCESSIBILITY_SERVICE).
         -->
+        <!--
+          Runs in its OWN lightweight process (":home"), deliberately separate from the
+          heavy Compose UI process. On this 2 GB TV the low-memory killer reclaims the
+          backgrounded launcher UI process; keeping the redirect service out of it means
+          the Home button keeps working even after the UI is evicted (the service just
+          cold-starts the UI on the next Home press). A process holding only this tiny
+          bound service is a poor LMK target and stays alive far longer.
+        -->
         <service
             android:name=".HomeRedirectService"
+            android:process=":home"
             android:exported="true"
             android:label="@string/home_redirect_label"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">

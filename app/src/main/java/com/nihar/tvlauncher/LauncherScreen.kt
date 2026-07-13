@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.repeatOnLifecycle
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.nihar.tvlauncher.screensaver.ImageManifestRepository
@@ -182,12 +183,21 @@ private fun WallpaperSlideshow(
 
     var index by remember { mutableStateOf(0) }
     LaunchedEffect(index, models) { onCurrentModel(models[index % models.size]) }
-    LaunchedEffect(models, intervalMs) {
-        while (true) {
-            delay(intervalMs)
-            // Never crossfade (a heavy full-screen blend) while the dock is scrolling.
-            while (busy()) delay(300)
-            index = (index + 1) % models.size
+
+    // Advance the slideshow ONLY while the launcher is RESUMED. When you're in another app
+    // this launcher is backgrounded; repeatOnLifecycle cancels the loop so we stop decoding
+    // a fresh full-screen bitmap every interval in the background. That background churn
+    // kept Coil's memory cache full and made this process a fatter low-memory-killer target
+    // (the killer taking our process down is what reverts the Home button). Resumes cleanly.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(models, intervalMs, lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                delay(intervalMs)
+                // Never crossfade (a heavy full-screen blend) while the dock is scrolling.
+                while (busy()) delay(300)
+                index = (index + 1) % models.size
+            }
         }
     }
 

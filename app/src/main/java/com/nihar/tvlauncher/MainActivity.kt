@@ -59,15 +59,16 @@ class MainActivity : ComponentActivity() {
      * (watch the stock launcher, launch us over it) is how we become the effective home.
      */
     private fun openAccessibilitySettings() {
+        val label = getString(R.string.home_redirect_label)
         val opened = runCatching {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }.isSuccess
         if (opened) {
-            Toast.makeText(this, "Enable \"Nihar TV — Home button\"", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Enable \"$label\"", Toast.LENGTH_LONG).show()
         } else {
             Toast.makeText(
                 this,
-                "Turn on \"Nihar TV — Home button\" under Settings → Accessibility",
+                "Turn on \"$label\" under Settings → Accessibility",
                 Toast.LENGTH_LONG,
             ).show()
         }

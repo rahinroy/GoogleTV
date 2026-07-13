@@ -140,8 +140,17 @@ chooser**, so this is device-dependent and often not fully possible without trad
   regardless of the home role. Community launchers (e.g.
   [FLauncher](https://gitlab.com/flauncher/flauncher), Projectivy) work around this by
   disabling the stock launcher via adb (`pm disable-user --user 0 <stock-launcher-pkg>`)
-  and/or an accessibility service that intercepts the Home key. These are advanced,
-  device-specific, and reversible — research your specific model before trying them.
+  and/or an accessibility service that watches for the stock launcher and relaunches
+  itself over it. This app ships that service (`HomeRedirectService`); enable it from
+  the in-app **Settings → "Set as default launcher"** button.
+
+Some OEMs (e.g. TCL) run an **autostart manager** that blocks the accessibility service
+from auto-binding at boot and resets that permission on every reboot. The service is put
+in its own `:home` process so it survives the low-memory killer during normal use, but
+after a **reboot** you may need to re-enable it: toggle the app's entry under
+Accessibility off/on, or run `setup-home.ps1` / `setup-home.bat` from a PC (grants the
+autostart appop and rebinds the service). See [`CLAUDE.md`](CLAUDE.md) for the full
+diagnosis.
 
 You can always open the launcher directly (`adb shell am start -n
 com.nihar.tvlauncher/.MainActivity`) or from the app list, even if it isn't home.
