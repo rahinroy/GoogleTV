@@ -222,6 +222,18 @@ Fixes applied (see the manifest, `LauncherApp.kt`, `LauncherScreen.kt`):
 - **Grant the vendor appop** so auto-rebind is permitted (holds until the next reboot):
   `adb shell cmd appops set com.nihar.tvlauncher AUTO_START allow`.
 
+**Cold-start "flash" (stock launcher visible while our UI cold-starts) — fixed with a
+curtain.** After a long video the UI process is LMK-killed, so a Home press cold-starts it
+(~1–2 s) with the stock launcher visible the whole time. `HomeRedirectService` (alive in
+`:home`) now drops a full-screen opaque `TYPE_ACCESSIBILITY_OVERLAY` the instant it sees
+the stock launcher, starts `MainActivity` (with `FLAG_ACTIVITY_NO_ANIMATION`) behind it,
+and lifts the overlay only when `MainActivity` broadcasts `ACTION_LAUNCHER_SHOWN` from
+`onResume`+`decorView.post` (or a 3 s safety timeout). Removal is driven by that explicit
+signal, NOT window events — the overlay and the launcher share the package, so a
+`pkg == packageName` check tears the curtain down before the UI has drawn (verified: it
+did). With the broadcast the sequence is black → our launcher, stock launcher never
+visible (verified frame-by-frame: curtain black → clock/dock on black bg → wallpaper).
+
 Binding the service programmatically for testing needs a *transition* (setting the same
 value is a no-op): `settings delete secure enabled_accessibility_services` then
 `settings put secure enabled_accessibility_services <pkg>/<pkg>.HomeRedirectService` and

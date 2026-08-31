@@ -74,6 +74,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Signal the redirect service's cold-start curtain that our window is up, so it can
+        // lift the black overlay it raised over the stock launcher. Posted to the decor view
+        // so it fires after the first layout/draw pass (not before we're actually visible).
+        window.decorView.post {
+            runCatching {
+                sendBroadcast(
+                    Intent(HomeRedirectService.ACTION_LAUNCHER_SHOWN).setPackage(packageName),
+                )
+            }
+        }
+    }
+
     private fun launchApp(app: AppEntry) {
         val intent = repository.launchIntentFor(app.packageName)
         if (intent == null) {
