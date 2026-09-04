@@ -58,7 +58,8 @@ whole scroll path was profiled with `dumpsys gfxinfo` to stay under the frame bu
    ```
    On Windows the path is escaped, e.g.
    `sdk.dir=C\:\\Users\\you\\AppData\\Local\\Android\\Sdk`.
-3. Add some photos (optional but recommended) — see
+3. Photos need no setup — they stream from
+   [the photo repo](https://github.com/rahinroy/photos). To use your own, see
    [Adding screensaver / wallpaper photos](#adding-screensaver--wallpaper-photos).
 
 ---
@@ -107,19 +108,42 @@ adb shell am start -n com.nihar.tvlauncher/.MainActivity
 
 ## Adding screensaver / wallpaper photos
 
-**Bundled (rebuild required):** drop `.jpg` / `.jpeg` / `.png` / `.webp` files into
-`app/src/main/assets/screensaver/`, then rebuild and redeploy. These images are
-git-ignored so your personal photos are never committed.
+Photos live in a **separate repo** and are fetched at runtime, so adding one never means
+rebuilding or reinstalling the APK:
 
-- Photos with EXIF **GPS** + **DateTimeOriginal** get a location + date overlay on the
-  home screen (reverse-geocoded on-device; degrades gracefully if unavailable).
+> **https://github.com/rahinroy/photos**
 
-**Remote (no rebuild):** set `MANIFEST_URL` in
-`app/src/main/java/com/nihar/tvlauncher/screensaver/ScreensaverConfig.kt` to an `https`
-URL returning JSON — either `["https://host/a.jpg", ...]` or `{"images":[...]}` (a
-GitHub raw file or any static host works). The app paints bundled photos instantly, then
-swaps to the remote list once fetched, and caches the last list so it still works
-offline. After that, changing photos is just editing the JSON + images at that URL.
+Drop `.jpg` / `.jpeg` / `.png` / `.webp` files into that repo's `photos/` folder and push
+(or upload them through the GitHub web UI). A GitHub Action regenerates `screensaver.json`
+— the manifest the TV reads — and commits it back. The launcher re-fetches on next start.
+Deleting a photo works the same way.
+
+`ScreensaverConfig.MANIFEST_URL` points at that manifest. Point it at your own fork, any
+other `https` URL serving the same JSON, or blank it out to use bundled photos only.
+
+**Manifest format.** A bare `["https://host/a.jpg", ...]` array works, but the generator
+emits per-photo records so the overlay keeps working for remote images:
+
+```json
+{ "images": [
+    { "url": "https://host/a.jpg", "lat": 36.6239, "lon": -121.9403,
+      "taken": "2023-07-22T18:36:04" }
+] }
+```
+
+`lat` / `lon` / `taken` come from each photo's EXIF and are optional. The TV
+reverse-geocodes the coordinates **on-device** for the location + date overlay in the
+top-right of the home screen — no lookup happens in the photo repo.
+
+**Offline fallback (optional).** `ImageManifestRepository` resolves in this order:
+
+    remote manifest  →  last-cached manifest (offline)  →  app/src/main/assets/screensaver/
+
+The last successful manifest is cached to `filesDir`, so a TV that has fetched once keeps
+working without network. Only put files in `app/src/main/assets/screensaver/` if you want
+something to show on a device that has *never* reached the network — they inflate the APK
+by their full size and need a rebuild to change. That folder is git-ignored, so personal
+photos are never committed here either way.
 
 **Test the screensaver immediately** (instead of waiting for idle):
 ```bash
@@ -178,7 +202,7 @@ app/src/main/
       ScreensaverConfig.kt                MANIFEST_URL + asset/cache constants
       ImageManifestRepository.kt          Remote JSON manifest → images, with cache
   res/font/elms_sans.ttf                  Overlay font (SIL OFL)
-  assets/screensaver/                     Your bundled photos (git-ignored)
+  assets/screensaver/                     Optional offline-fallback photos (git-ignored)
 ```
 
 See [`CLAUDE.md`](CLAUDE.md) for deeper architecture notes, the scroll-performance
@@ -189,7 +213,8 @@ findings, and device-specific gotchas.
 ## Credits & licensing
 
 - UI font: **Elms Sans** by Gida Type Studio, under the SIL Open Font License 1.1.
-- Bundled screensaver photos are **not** included in this repository — add your own.
+- Screensaver photos are **not** in this repository — they are served from a separate
+  photo repo at runtime. Point `MANIFEST_URL` at your own.
 
 The application id / package is `com.nihar.tvlauncher`; rename it if you fork this for
 your own build.

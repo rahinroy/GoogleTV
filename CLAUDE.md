@@ -25,7 +25,9 @@ Settled design decisions (don't re-litigate):
   screensaver slideshow (non-interactive, so Compose buys nothing there).
 - **Google Photos API is not viable** for the screensaver — Google removed broad read
   scopes (2025-03-31). The path is a remote image manifest (a URL/bucket you control),
-  optionally fed from a shared-album export. Bundled assets are the default.
+  optionally fed from a shared-album export. **This is now the default:** photos live in
+  a companion repo, <https://github.com/rahinroy/photos>, and are fetched at runtime.
+  `app/src/main/assets/screensaver/` is empty — an optional offline fallback only.
 
 ---
 
@@ -52,7 +54,7 @@ app/src/main/java/com/nihar/tvlauncher/
   screensaver/ScreensaverConfig.kt         MANIFEST_URL + asset/cache constants
   screensaver/ImageManifestRepository.kt   remote JSON manifest -> image models, w/ cache
 app/src/main/res/font/elms_sans.ttf        Elms Sans variable TTF (OFL) — overlay font
-app/src/main/assets/screensaver/           bundled photos (git-ignored; user-supplied)
+app/src/main/assets/screensaver/           EMPTY — optional offline fallback (git-ignored)
 ```
 
 ---
@@ -116,16 +118,43 @@ percentiles, `gpu percentile`, `Slow UI thread`, `Slow bitmap uploads`, `Missed 
   `loadApps(hidden, order)` applies order then filters hidden BEFORE rasterizing (hidden
   apps cost zero). `loadAllForSettings(hidden, order)` returns all apps in order.
 - **Overlays / EXIF:** clock (top-left) + photo place/date (top-right, from
-  `PhotoExif.readPhotoInfo`: EXIF GPS → `Geocoder` city/region/country, DateTimeOriginal
-  → date). `WallpaperSlideshow` reports its current model via `onCurrentModel`;
-  `LauncherScreen` computes `PhotoInfo` off-thread. EXIF is read only for bundled
-  `file:///android_asset/...` photos (remote URLs skipped). Requires Play Services for
-  the geocoder; degrades gracefully (date only, or nothing) if unavailable.
-- **Remote manifest:** set `ScreensaverConfig.MANIFEST_URL` to an https URL returning JSON
-  (`["url", ...]` or `{"images":[...]}`) to update photos without rebuilding. Blank URL
-  (default) = bundled assets only. `ImageManifestRepository` precedence: remote →
-  last-cached remote (offline) → bundled assets. Cached to `filesDir`. Requires the
+  `PhotoExif.readPhotoInfo`: GPS → `Geocoder` city/region/country, capture time → date).
+  `WallpaperSlideshow` reports its current model via `onCurrentModel`; `LauncherScreen`
+  computes `PhotoInfo` off-thread. Requires Play Services for the geocoder; degrades
+  gracefully (date only, or nothing) if unavailable.
+  **Two EXIF sources, because a remote photo's bytes belong to Coil, not us:**
+  bundled `file:///android_asset/...` photos are read with `ExifInterface` on-device;
+  remote http(s) photos get their `lat`/`lon`/`taken` from the *manifest*, via
+  `ImageManifestRepository.metaFor(url)`. Ordering is what makes that safe — `parse()`
+  fills `metaByUrl` before `resolveModels` returns, and `LauncherScreen` only calls
+  `onCurrentModel` with entries from that returned list, so the meta is always there
+  before the overlay asks for it. Don't cache-warm `readPhotoInfo` ahead of a manifest
+  parse or you'll pin an empty `PhotoInfo` in `infoCache`.
+- **Remote manifest (the live photo source).** `ScreensaverConfig.MANIFEST_URL` points at
+  `raw.githubusercontent.com/rahinroy/photos/main/screensaver.json`. `ImageManifestRepository`
+  precedence: remote → last-cached remote (offline) → bundled assets. Requires the
   `INTERNET` permission (already in the manifest); cleartext is blocked on targetSdk 34.
+  - **Two accepted shapes.** A bare `["url", ...]` array still works. The richer one is
+    `{"images":[{"url", "lat", "lon", "taken"}]}` — `taken` is **ISO-8601**
+    (`2023-07-22T18:36:04`), *not* EXIF's `yyyy:MM:dd HH:mm:ss`; `PhotoExif.formatDate`
+    takes the parser as an argument for exactly this reason. All three meta fields are
+    optional per entry.
+  - **The cache stores the raw response body**, not a re-serialized URL list — otherwise
+    the EXIF is lost on the offline path and the overlay dies whenever the TV is offline.
+  - **The photo repo owns the manifest.** A GitHub Action there
+    (`.github/workflows/build-manifest.yml` → `scripts/build_manifest.py`, Pillow) rebuilds
+    `screensaver.json` on any push touching `photos/**` and commits it back. Its path
+    filter excludes `screensaver.json`, so its own commit can't re-trigger it. URLs are
+    derived from `GITHUB_REPOSITORY`/`GITHUB_REF_NAME`, so a fork generates correct URLs.
+  - **`raw.githubusercontent.com` caches ~5 min.** After CI commits a new manifest the TV
+    can still fetch the old one briefly — don't debug a phantom. The manifest is also
+    fetched once per launch (`LaunchedEffect(Unit)` in `WallpaperSlideshow`), so a new
+    photo appears on the next launcher start, not mid-session.
+  - **`screensaver.json` is deterministic — no build timestamp.** That's deliberate: a
+    `generated` field made the workflow's "commit only if changed" check fire on every
+    run. Don't add one back.
+  - **Don't re-bundle the photos.** They were ~190 MB of APK. Adding a photo is a push to
+    the photo repo, not a rebuild + sideload.
 - **TV Material3 is fully `@ExperimentalTvMaterial3Api`.** Handled with a module-wide
   opt-in compiler flag in `app/build.gradle.kts`
   (`-opt-in=androidx.tv.material3.ExperimentalTvMaterial3Api`).

@@ -3,6 +3,7 @@ package com.nihar.tvlauncher
 import android.content.Context
 import android.location.Geocoder
 import androidx.exifinterface.media.ExifInterface
+import com.nihar.tvlauncher.screensaver.ImageManifestRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.LocalDateTime
@@ -16,42 +17,55 @@ data class PhotoInfo(val place: String?, val date: String?) {
 
 private val infoCache = HashMap<String, PhotoInfo>()
 
+private const val ASSET_PREFIX = "file:///android_asset/"
+
 /**
- * Reads EXIF from a bundled-asset wallpaper [model] (a `file:///android_asset/...` URI):
+ * Resolves the place/date overlay for a wallpaper [model]:
  *  - GPS → reverse-geocoded to city / region / country (best available),
- *  - DateTimeOriginal → "Month D, YYYY".
- * Remote (http) models are skipped. Cached per model. Never throws.
+ *  - capture time → "Month D, YYYY".
+ *
+ * Bundled assets (`file:///android_asset/...`) are read straight out of the APK.
+ * Remote photos can't be — Coil owns those bytes — so their EXIF comes from the
+ * manifest via [ImageManifestRepository.metaFor]. Cached per model. Never throws.
  */
 suspend fun readPhotoInfo(context: Context, model: String): PhotoInfo = withContext(Dispatchers.IO) {
     infoCache[model]?.let { return@withContext it }
 
-    val assetPrefix = "file:///android_asset/"
-    if (!model.startsWith(assetPrefix)) return@withContext PhotoInfo(null, null)
-    val assetPath = model.removePrefix(assetPrefix)
-
-    val info = runCatching {
-        context.assets.open(assetPath).use { stream ->
-            val exif = ExifInterface(stream)
-            val date = exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
-                ?: exif.getAttribute(ExifInterface.TAG_DATETIME)
+    val info = if (model.startsWith(ASSET_PREFIX)) {
+        assetInfo(context, model.removePrefix(ASSET_PREFIX))
+    } else {
+        ImageManifestRepository.metaFor(model)?.let { meta ->
             PhotoInfo(
-                place = placeFor(context, exif),
-                date = formatDate(date),
+                place = placeFor(context, meta.lat, meta.lon),
+                date = formatDate(meta.taken, DateTimeFormatter.ISO_LOCAL_DATE_TIME),
             )
-        }
-    }.getOrDefault(PhotoInfo(null, null))
+        } ?: PhotoInfo(null, null)
+    }
 
     infoCache[model] = info
     info
 }
 
-private fun placeFor(context: Context, exif: ExifInterface): String? {
-    val latLong = exif.latLong ?: return null // DoubleArray[lat, lng] or null
+private fun assetInfo(context: Context, assetPath: String): PhotoInfo =
+    runCatching {
+        context.assets.open(assetPath).use { stream ->
+            val exif = ExifInterface(stream)
+            val latLong = exif.latLong // DoubleArray[lat, lng] or null
+            val date = exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
+                ?: exif.getAttribute(ExifInterface.TAG_DATETIME)
+            PhotoInfo(
+                place = placeFor(context, latLong?.getOrNull(0), latLong?.getOrNull(1)),
+                date = formatDate(date, EXIF_DATE),
+            )
+        }
+    }.getOrDefault(PhotoInfo(null, null))
+
+private fun placeFor(context: Context, lat: Double?, lon: Double?): String? {
+    if (lat == null || lon == null) return null
     if (!Geocoder.isPresent()) return null
     return runCatching {
         @Suppress("DEPRECATION")
-        val addresses = Geocoder(context, Locale.getDefault())
-            .getFromLocation(latLong[0], latLong[1], 1)
+        val addresses = Geocoder(context, Locale.getDefault()).getFromLocation(lat, lon, 1)
         val a = addresses?.firstOrNull() ?: return null
         // Best available granularity: city → region → country.
         (a.locality ?: a.subAdminArea ?: a.adminArea)?.let { local ->
@@ -60,13 +74,13 @@ private fun placeFor(context: Context, exif: ExifInterface): String? {
     }.getOrNull()
 }
 
-private fun formatDate(exifDate: String?): String? {
-    if (exifDate.isNullOrBlank()) return null
+/** EXIF's own date format, e.g. "2023:07:22 18:36:04". */
+private val EXIF_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss")
+
+private fun formatDate(raw: String?, parser: DateTimeFormatter): String? {
+    if (raw.isNullOrBlank()) return null
     return runCatching {
-        val parsed = LocalDateTime.parse(
-            exifDate,
-            DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss"),
-        )
-        parsed.format(DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.getDefault()))
+        LocalDateTime.parse(raw.trim(), parser)
+            .format(DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.getDefault()))
     }.getOrNull()
 }
