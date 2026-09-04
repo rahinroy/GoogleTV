@@ -117,6 +117,13 @@ percentiles, `gpu percentile`, `Slow UI thread`, `Slow bitmap uploads`, `Missed 
   hidden set, custom app order (list of packages), and photo interval seconds.
   `loadApps(hidden, order)` applies order then filters hidden BEFORE rasterizing (hidden
   apps cost zero). `loadAllForSettings(hidden, order)` returns all apps in order.
+- **Both photo surfaces shuffle.** `WallpaperSlideshow` shuffles once per launcher start
+  (`resolveModels(...).shuffled()`), matching `SlideshowView.start`'s `models.shuffled()`.
+  Manifest order is chronological (filename sort on `PXL_<date>_...`), and this process is
+  cold-started often by the LMK, so a sequential walk restarted at the oldest photo nearly
+  every time and rarely reached recent ones. Note the screensaver `DreamService` is a
+  *separate surface* from the home-screen wallpaper and is not currently selected on the
+  TV (`settings get secure screensaver_components` → null), so only the wallpaper runs.
 - **Overlays / EXIF:** clock (top-left) + photo place/date (top-right, from
   `PhotoExif.readPhotoInfo`: GPS → `Geocoder` city/region/country, capture time → date).
   `WallpaperSlideshow` reports its current model via `onCurrentModel`; `LauncherScreen`

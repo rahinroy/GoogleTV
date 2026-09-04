@@ -174,7 +174,11 @@ private fun WallpaperSlideshow(
 ) {
     val context = LocalContext.current
     var models by remember { mutableStateOf<List<String>>(emptyList()) }
-    LaunchedEffect(Unit) { models = ImageManifestRepository.resolveModels(context) }
+    // Shuffled once per launcher start, like the screensaver does. Manifest order is
+    // chronological, and this process is cold-started often (the low-memory killer takes
+    // it while you're in another app), so walking it in order meant restarting at the
+    // oldest photo nearly every time and rarely reaching the recent ones.
+    LaunchedEffect(Unit) { models = ImageManifestRepository.resolveModels(context).shuffled() }
 
     if (models.isEmpty()) {
         Box(modifier.background(Color(0xFF14171C)))
