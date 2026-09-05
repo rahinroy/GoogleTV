@@ -38,12 +38,21 @@ android {
 
     buildTypes {
         release {
-            // Keep it debuggable-simple for now; no minification while iterating.
+            // DEPLOY THIS ONE, not debug. A debuggable build is pinned by ART at
+            // `status=verify` — it is never AOT-compiled, even if you force
+            // `cmd package compile -m speed -f` (verified: still status=verify). So every
+            // Compose scroll frame runs interpreted until the JIT catches up a few seconds
+            // in, which is exactly why fast scrolling was choppy at first and smooth after.
+            // A non-debuggable build gets AOT-compiled and picks up the Compose libraries'
+            // merged baseline profiles, so the scroll paths are precompiled at install.
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            // Sign with the debug key so `adb install -r` updates the sideloaded app in
+            // place instead of failing on a signature mismatch.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
@@ -80,6 +89,10 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.core)
     implementation(libs.androidx.exifinterface)
+    // Installs the baseline profile (AGP merges the Compose libraries' profiles into the
+    // release APK) into ART at first run, so the scroll paths are AOT-compiled rather than
+    // interpreted-then-JITted. Without this the first seconds of scrolling are choppy.
+    implementation(libs.androidx.profileinstaller)
 
     debugImplementation(libs.androidx.ui.tooling)
 }

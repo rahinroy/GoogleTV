@@ -80,6 +80,47 @@ app/src/main/assets/screensaver/           EMPTY — optional offline fallback (
   `Row` belt of tiles + a ⚙ settings tile. Banner apps → 16:9 tiles (Crop), icon apps →
   square (Fit). Clock overlay top-left, photo place/date overlay top-right.
 
+### SCROLL PERFORMANCE — #0: SHIP THE RELEASE BUILD (biggest win by far)
+
+**A debuggable build is never AOT-compiled.** ART pins it at `status=verify` and refuses
+to compile it — `cmd package compile -m speed -f` reports "Success" in ~1s and changes
+nothing (verified: still `status=verify`, `reason=cmdline`). So every Compose scroll frame
+runs *interpreted* until the JIT catches up a few seconds in. That is the whole
+"choppy at first, smooth after a few seconds, smooth again if I wait and re-scroll"
+symptom — JIT state is per-process, so it resets on every cold start.
+
+Measured on this device, first scroll after a cold start vs. a later scroll in the same
+process (`dumpsys gfxinfo`, 40 batched D-pad events per burst):
+
+```
+                     EARLY (cold)              LATE (warmed)
+  debug     57ms p50, 63 missed vsync     38ms p50, 25 missed vsync   <- the gap you feel
+  release   22ms p50,  0 missed vsync     22ms p50,  0 missed vsync   <- no gap at all
+```
+
+Release is better cold than debug ever gets warm. Whole-run numbers: 69.86% janky /
+57ms p50 / 51 slow-UI-thread frames → **3.12% janky / 22ms p50 / 0**.
+
+So:
+- **`deploy.ps1` installs the RELEASE build by default** (`.\deploy.ps1 -Debug` opts out).
+  `release` is signed with the debug key so `adb install -r` still updates in place.
+- **`androidx.profileinstaller` is a dependency** and the release APK carries
+  `assets/dexopt/baseline.prof` (AGP merges the Compose libraries' baseline profiles via
+  `compileReleaseArtProfile`). Confirm with `zipfile` on the APK if it ever regresses.
+- **`deploy.ps1` force-compiles after install** (`cmd package compile -m speed-profile -f`)
+  because otherwise the AOT pass waits for background dexopt, which only runs when the
+  device is idle *and* charging — a TV may not hit that for a long time, so the first day
+  would still be choppy. Check with `dumpsys package <pkg> | grep status=`; you want
+  `speed-profile`, never `verify`. AOT survives reboots (odex on disk); it is reset by
+  every reinstall, which is why deploy redoes it.
+- **Reinstalling also unbinds the accessibility service** (TclAppBoot blocks auto-rebind),
+  killing the `:home` process — `deploy.ps1` now re-toggles it too.
+- Non-debuggable means **`run-as` no longer works** for poking at `filesDir`/Coil's cache.
+  Use `.\deploy.ps1 -Debug` when you need that, and accept the choppiness while debugging.
+
+The tuning below is still all load-bearing — but it was tuned *against a debug build*, so
+its absolute numbers understate how good the release build is.
+
 ### SCROLL PERFORMANCE — profiler-verified stack (do NOT regress these)
 Tuned against `adb shell dumpsys gfxinfo <pkg>` (reset → scroll → read `Janky frames`,
 percentiles, `gpu percentile`, `Slow UI thread`, `Slow bitmap uploads`, `Missed Vsync`).
@@ -225,6 +266,44 @@ Google TV pins its own launcher and hides the "default home app" chooser. Findin
   device-specific.
 
 ---
+
+## Killing the stock-launcher flash for real (priority, not the role)
+
+The reactive redirect below could never fully remove the "stock launcher flashes for a
+second" — it only fires on `TYPE_WINDOW_STATE_CHANGED`, i.e. *after* the stock launcher
+is already foreground. The curtain shortened the flash; it could not win the race. The
+fix is to make sure nothing above us can resolve as home at all.
+
+Home candidates on this TCL box, highest priority first:
+
+```
+ priority     2  com.google.android.apps.tv.launcherx          stock launcher
+ priority     1  ...tungsten.setupwraith/.RecoveryActivity     black dead-end
+ priority     0  com.nihar.tvlauncher   (+ com.spocky.projengmenu, Projectivy)
+ priority -1000  com.android.tv.settings/...FallbackHome       always-present backstop
+```
+
+Findings, each verified on-device:
+
+- **`ROLE_HOME` alone does NOT work here.** Granting it (`cmd package set-home-activity`)
+  left the stock launcher still opening first on a physical Home press. The button
+  resolves by *priority*, not the role. Grant it anyway — it breaks the priority-0 tie
+  against Projectivy once the higher entries are gone.
+- **`setup-home.ps1` never granted the role at all**, which is why this was never even
+  half-working. It now does.
+- **Disabling only the stock launcher is a trap:** home then falls to `RecoveryActivity`
+  at priority 1 — the black dead-end the old notes warned about.
+- **That Recovery *component* cannot be disabled by shell** —
+  `SecurityException: Shell cannot change component state ... to 3`. The whole
+  `com.google.android.tungsten.setupwraith` package has to be disabled instead. That
+  package is the setup wizard; **re-enable it before a factory reset**.
+- **`pm disable-user` persists across reboots**, unlike the `AUTO_START` appop. So unlike
+  every earlier attempt, this fix survives a restart — that's the real win.
+- **Disabling setupwraith knocks the device off the network for ~2 minutes**, adb
+  included. It does *not* reboot (uptime was preserved across it). Wait it out.
+
+Scripts: `hard-disable-stock-home.ps1` applies this; `restore-stock-home.ps1` reverts
+everything. The accessibility redirect below is kept as a belt-and-braces safety net.
 
 ## Home-button reliability: LMK + the TCL autostart lockdown (deep-dive)
 

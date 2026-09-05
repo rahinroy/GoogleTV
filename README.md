@@ -66,10 +66,16 @@ whole scroll path was profiled with `dumpsys gfxinfo` to stay under the frame bu
 
 ## Build
 
+**Build the release variant, not debug.** A debuggable build is never AOT-compiled by
+ART, so Compose's scroll code runs interpreted until the JIT warms up — fast scrolling is
+visibly choppy for the first few seconds after every cold start. Release is measurably
+smoother from the first frame (22ms p50 / 0 missed vsync, vs 57ms / 63 for debug). It is
+signed with the debug key, so `adb install -r` still updates in place.
+
 ```bash
 # From the project root (use ./gradlew on macOS/Linux, .\gradlew.bat on Windows)
-./gradlew assembleDebug
-# → app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleRelease
+# → app/build/outputs/apk/release/app-release.apk
 ```
 
 The debug build is signed with Gradle's auto-generated debug key by default. If you
@@ -91,7 +97,7 @@ adb pair <tv-ip>:<PAIRING_PORT>          # then enter the 6-digit code
 # Connect (port shown on the main Wireless debugging screen):
 adb connect <tv-ip>:<CONNECT_PORT>
 adb devices
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
 Or use the convenience scripts (they locate adb and install the latest build):
