@@ -222,11 +222,31 @@ disk (`local.properties` → `sdk.dir=...`). See [`README.md`](README.md) for th
 setup. Quick reference:
 
 ```bash
-./gradlew assembleDebug        # → app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleRelease      # → app/build/outputs/apk/release/app-release.apk
 adb connect <tv-ip>:<port>     # Android 11+ TVs: Wireless debugging (ports are random)
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n com.nihar.tvlauncher/.MainActivity
+./deploy.ps1                   # install + AOT compile + rebind the a11y service
 ```
+
+**Deploy with `deploy.ps1`, never a bare `adb install`.** Every reinstall silently undoes
+two things the launcher needs, and installing by hand leaves the TV in a degraded state
+that still *looks* fine:
+
+1. **AOT compilation is reset** → back to `status=verify`, so scrolling is choppy until
+   the JIT warms up (see "SHIP THE RELEASE BUILD" above). `deploy.ps1` re-runs
+   `cmd package compile -m speed-profile -f`.
+2. **The accessibility service is unbound** and TclAppBoot blocks it from rebinding, so
+   the `:home` process never comes back. `deploy.ps1` re-toggles it.
+
+Check both after any manual install:
+```bash
+adb shell "dumpsys package com.nihar.tvlauncher | grep -m1 status="   # want speed-profile
+adb shell "dumpsys accessibility | grep 'Bound services'"             # want our service
+adb shell ps -A | grep nihar                                          # want 2 processes
+```
+
+⚠️ **Before a factory reset, run `restore-stock-home.ps1`** — `setupwraith` (the setup
+wizard) is currently disabled to keep it out of HOME resolution. See the priority section
+below.
 
 - **Wireless debugging** ports change whenever the setting is toggled or the TV reboots.
   Re-discover a rebooted TV with `adb mdns services`, then `adb connect <ip>:<port>`. The

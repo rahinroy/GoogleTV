@@ -97,13 +97,31 @@ adb pair <tv-ip>:<PAIRING_PORT>          # then enter the 6-digit code
 # Connect (port shown on the main Wireless debugging screen):
 adb connect <tv-ip>:<CONNECT_PORT>
 adb devices
-adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
-Or use the convenience scripts (they locate adb and install the latest build):
+**Then install with the deploy script, not `adb install` directly:**
 
 - **Windows:** double-click `deploy.bat`, or run `.\deploy.ps1 <tv-ip>:<port>`
 - The scripts use `./platform-tools/adb.exe` if present, otherwise `adb` from `PATH`.
+- `.\deploy.ps1 -Debug` installs the debug build instead (needed for `run-as`, but
+  scrolling will be choppy — see [Build](#build)).
+
+The script does three things, and a bare `adb install -r` only does the first — leaving
+the TV in a state that looks fine but isn't:
+
+1. installs the APK
+2. **AOT-compiles it** (`cmd package compile -m speed-profile -f`), because a reinstall
+   resets ART to `status=verify` and the automatic recompile only happens once the device
+   is idle *and* charging — which a TV may not be for days
+3. **rebinds the Home-redirect accessibility service**, which every reinstall unbinds and
+   which can't rebind itself on TCL boxes
+
+Verify after any manual install:
+
+```bash
+adb shell "dumpsys package com.nihar.tvlauncher | grep -m1 status="   # want speed-profile
+adb shell "dumpsys accessibility | grep 'Bound services'"             # want our service
+```
 
 Launch it directly:
 ```bash
@@ -161,26 +179,57 @@ adb shell am start -n com.android.systemui/.Somnambulator
 
 ## Making it the default launcher
 
-Google TV deliberately pins its own launcher and **hides the "default home app"
-chooser**, so this is device-dependent and often not fully possible without trade-offs:
+Google TV deliberately pins its own launcher and **hides the "default home app" chooser**,
+so this is device-dependent. What actually worked here, on a TCL Google TV box:
 
-- The app registers as a home-screen candidate and can be granted the `HOME` role
-  (Settings → *"Set as default launcher"* fires the system role dialog where available).
-- On many Google TV boxes the **physical Home button is hardwired to Google's launcher**
-  regardless of the home role. Community launchers (e.g.
-  [FLauncher](https://gitlab.com/flauncher/flauncher), Projectivy) work around this by
-  disabling the stock launcher via adb (`pm disable-user --user 0 <stock-launcher-pkg>`)
-  and/or an accessibility service that watches for the stock launcher and relaunches
-  itself over it. This app ships that service (`HomeRedirectService`); enable it from
-  the in-app **Settings → "Set as default launcher"** button.
+**The `HOME` role is not enough.** The app can hold `ROLE_HOME` (Settings →
+*"Set as default launcher"*, or `cmd package set-home-activity`), but on this box the
+physical Home button resolves by **intent-filter priority** and ignores the role — the
+stock launcher still opened first. An accessibility service that watches for the stock
+launcher and relaunches over it (`HomeRedirectService`, which this app ships) can only
+react *after* the stock launcher is already on screen, so it leaves a visible flash.
 
-Some OEMs (e.g. TCL) run an **autostart manager** that blocks the accessibility service
-from auto-binding at boot and resets that permission on every reboot. The service is put
-in its own `:home` process so it survives the low-memory killer during normal use, but
-after a **reboot** you may need to re-enable it: toggle the app's entry under
-Accessibility off/on, or run `setup-home.ps1` / `setup-home.bat` from a PC (grants the
-autostart appop and rebinds the service). See [`CLAUDE.md`](CLAUDE.md) for the full
-diagnosis.
+**What works is removing everything above you in the priority list.** On this device:
+
+```
+ priority     2  com.google.android.apps.tv.launcherx          stock launcher
+ priority     1  ...tungsten.setupwraith/.RecoveryActivity     a black dead-end
+ priority     0  com.nihar.tvlauncher                          <- us
+ priority -1000  com.android.tv.settings/...FallbackHome       always-present backstop
+```
+
+`hard-disable-stock-home.ps1` / `.bat` disables the top two and claims the `HOME` role
+(which breaks ties at priority 0 if you have another launcher installed). Disabling only
+the stock launcher is a trap — home then falls to the priority-1 recovery activity, which
+is a dead end. Unlike the autostart permission, `pm disable-user` **persists across
+reboots**.
+
+> ⚠️ **Re-enable the stock launcher before a factory reset** with
+> `restore-stock-home.ps1` / `.bat`. `setupwraith` is the setup wizard, and the hard
+> disable turns it off. The same script reverts everything if the Home button misbehaves.
+>
+> Disabling `setupwraith` can knock the device off the network (adb included) for a
+> couple of minutes without rebooting it. That's expected — wait it out.
+
+Run the enumeration yourself before trusting the list above; package names and priorities
+differ by device:
+
+```bash
+adb shell "cmd package query-activities -c android.intent.category.HOME -a android.intent.action.MAIN"
+```
+
+Note that `cmd package resolve-activity` and injected `input keyevent KEYCODE_HOME` both
+use priority-only resolution and ignore the home role *and* disabled state — they will
+happily report a working setup as broken and vice-versa. **Only the physical remote's Home
+button and a reboot are ground truth.**
+
+Some OEMs (e.g. TCL) also run an **autostart manager** that blocks the accessibility
+service from auto-binding and resets that permission on every reboot. The service lives in
+its own `:home` process so it survives the low-memory killer during normal use. It's now a
+safety net rather than the primary mechanism, but to re-enable it: toggle the app's entry
+under Accessibility off/on, or run `setup-home.ps1` / `setup-home.bat` from a PC. Note that
+**every reinstall unbinds it** — `deploy.ps1` rebinds it for you. See
+[`CLAUDE.md`](CLAUDE.md) for the full diagnosis.
 
 You can always open the launcher directly (`adb shell am start -n
 com.nihar.tvlauncher/.MainActivity`) or from the app list, even if it isn't home.
