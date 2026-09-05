@@ -174,11 +174,26 @@ private fun WallpaperSlideshow(
 ) {
     val context = LocalContext.current
     var models by remember { mutableStateOf<List<String>>(emptyList()) }
-    // Shuffled once per launcher start, like the screensaver does. Manifest order is
-    // chronological, and this process is cold-started often (the low-memory killer takes
-    // it while you're in another app), so walking it in order meant restarting at the
-    // oldest photo nearly every time and rarely reaching the recent ones.
-    LaunchedEffect(Unit) { models = ImageManifestRepository.resolveModels(context).shuffled() }
+    // Re-resolve on every RESUME rather than once per process, so a photo pushed to the
+    // manifest repo shows up when you come back to the home screen instead of only after
+    // the process happens to be restarted. The fetch is off-thread and falls back to the
+    // cached manifest (then to bundled assets), so a dead network costs nothing.
+    //
+    // Shuffled, like the screensaver does: manifest order is chronological, and this
+    // process is cold-started often (the low-memory killer takes it while you're in
+    // another app), so walking it in order meant restarting at the oldest photo nearly
+    // every time and rarely reaching the recent ones. Only reshuffle when the photo SET
+    // actually changed, otherwise every resume would yank the wallpaper out from under
+    // you. Never swap in an empty list — keep showing what we have.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            val fresh = ImageManifestRepository.resolveModels(context)
+            if (fresh.isNotEmpty() && fresh.toSet() != models.toSet()) {
+                models = fresh.shuffled()
+            }
+        }
+    }
 
     if (models.isEmpty()) {
         Box(modifier.background(Color(0xFF14171C)))
@@ -193,7 +208,6 @@ private fun WallpaperSlideshow(
     // a fresh full-screen bitmap every interval in the background. That background churn
     // kept Coil's memory cache full and made this process a fatter low-memory-killer target
     // (the killer taking our process down is what reverts the Home button). Resumes cleanly.
-    val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(models, intervalMs, lifecycleOwner) {
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) {
