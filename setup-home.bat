@@ -12,6 +12,13 @@ if not exist "%ADB%" set ADB=adb
 set PKG=com.nihar.tvlauncher
 set SVC=%PKG%/%PKG%.HomeRedirectService
 
+REM Without this the stock launcher holds ROLE_HOME, so a Home press opens IT first and the
+REM accessibility service can only redirect afterwards -- that round trip is the visible
+REM "stock launcher flashes for a second". Holding the role means Home comes straight here
+REM and the stock launcher never starts. Does not survive a reboot on this box.
+echo Claiming the HOME role...
+%ADB% shell cmd package set-home-activity %PKG%/.MainActivity
+
 echo Granting AUTO_START...
 %ADB% shell cmd appops set %PKG% AUTO_START allow
 

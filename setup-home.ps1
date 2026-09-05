@@ -6,7 +6,7 @@
 # opens this launcher again. Run it once after a reboot if the Home button stops working.
 #
 # (No-PC alternative: open the launcher -> Settings -> "Set as default launcher", then
-#  toggle this app's entry under Accessibility off and back on — a user toggle always works.)
+#  toggle this app's entry under Accessibility off and back on -- a user toggle always works.)
 #
 #   .\setup-home.ps1                       # device already connected
 #   .\setup-home.ps1 192.168.1.50:37065    # connect to that address first
@@ -20,6 +20,13 @@ $pkg = "com.nihar.tvlauncher"
 $svc = "$pkg/$pkg.HomeRedirectService"
 
 if ($Device -ne "") { & $adb connect $Device }
+
+Write-Host "Claiming the HOME role..."
+# Without this the stock launcher holds ROLE_HOME, so a Home press opens IT first and the
+# accessibility service can only redirect afterwards -- that round trip is the visible
+# "stock launcher flashes for a second". Holding the role means Home comes straight here
+# and the stock launcher never starts. Does not survive a reboot on this box.
+& $adb shell cmd package set-home-activity "$pkg/.MainActivity"
 
 Write-Host "Granting AUTO_START..."
 & $adb shell cmd appops set $pkg AUTO_START allow
